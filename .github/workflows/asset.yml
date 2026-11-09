@@ -1,13 +1,12 @@
-name: Extract Game Assets and Commit
+name: Extract Game Assets (Committed ROM)
 
 on:
-  workflow_dispatch: # Allows you to manually trigger this from the GitHub Actions tab
+  workflow_dispatch: # Manual trigger from the Actions tab
 
 jobs:
   extract-assets:
     runs-on: ubuntu-latest
 
-    # Permissions required to let the workflow push code updates back to the repo
     permissions:
       contents: write
 
@@ -16,7 +15,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive # Ensures arcade-decomp submodule is cloned
+          submodules: recursive
 
       # Step 2: Set up Python environment
       - name: Set up Python
@@ -30,6 +29,30 @@ jobs:
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
+      # Step 4: Handle the TorrentZip lower/uppercase case issue
+      - name: Fix ROM Extension Case
+        run: |
+          if [ ! -f rom/sonic.zip ]; then
+            echo "::error::rom/sonic.zip not found in the repository! Check your path or spelling."
+            exit 1
+          fi
+
+          # Unpack the lowercase files, force uppercase extensions, and re-pack
+          mkdir -p temp_rom
+          unzip -q rom/sonic.zip -d temp_rom/
+          cd temp_rom
+          for f in *.*; do
+            ext="${f##*.}"
+            base="${f%.*}"
+            # Converts the extension to uppercase (e.g., .ic9 -> .IC9)
+            mv "$f" "${base}.${ext^^}" 2>/dev/null || true
+          done
+          
+          # Overwrite the original zip with the uppercase fixed bundle
+          zip -q -r ../rom/sonic.zip *
+          cd ..
+          rm -rf temp_rom
+
       # Step 5: Verify the ROM integrity
       - name: Verify ROM Set
         run: python tools/verify_rom.py
@@ -40,11 +63,11 @@ jobs:
           python extract_assets.py
           python extract_assets.py --check
 
-      # Step 7: Automatically commit and push changes back to the repository
+      # Step 7: Commit and push changes back to the repository
       - name: Commit and Push Assets
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "chore: automatically extract game assets [skip ci]"
           file_pattern: 'assets/**' # Restricts commits only to files inside the assets directory
           commit_user_name: "github-actions[bot]"
-          commit_user_email: "github-actions[bot]@://github.com"
+          commit_user_email: "github-actions[bot]@users.noreply.github.com"
