@@ -1,0 +1,64 @@
+name: Extract Game Assets and Commit
+
+on:
+  workflow_dispatch: # Allows you to manually trigger this from the GitHub Actions tab
+
+jobs:
+  extract-assets:
+    runs-on: ubuntu-latest
+
+    # Permissions required to let the workflow push code updates back to the repo
+    permissions:
+      contents: write
+
+    steps:
+      # Step 1: Checkout the repo AND its submodules (critical for tools/core/)
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive # Ensures arcade-decomp submodule is cloned
+
+      # Step 2: Set up Python environment
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # Step 3: Install dependencies
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      # Step 4: Prepare the ROM folder
+      # Ensure your sonic.zip is decoded here if using GitHub Secrets
+      - name: Prepare ROM Directory
+        run: |
+          mkdir -p rom
+          if [ -n "${{ secrets.SONIC_ROM_BASE64 }}" ]; then
+            echo "${{ secrets.SONIC_ROM_BASE64 }}" | base64 -d > rom/sonic.zip
+          fi
+          
+          if [ ! -f rom/sonic.zip ]; then
+            echo "::error::rom/sonic.zip is missing! Please upload the ROM to secrets or place it in the folder."
+            exit 1
+          fi
+
+      # Step 5: Verify the ROM integrity
+      - name: Verify ROM Set
+        run: python tools/verify_rom.py
+
+      # Step 6: Execute the asset extraction
+      - name: Extract Assets
+        run: |
+          python extract_assets.py
+          python extract_assets.py --check
+
+      # Step 7: Automatically commit and push changes back to the repository
+      - name: Commit and Push Assets
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: automatically extract game assets [skip ci]"
+          file_pattern: 'assets/**' # Restricts commits only to files inside the assets directory
+          commit_user_name: "github-actions[bot]"
+          commit_user_email: "github-actions[bot]@://github.com"
